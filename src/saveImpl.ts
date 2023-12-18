@@ -1,5 +1,6 @@
-import * as cache from "@actions/cache";
 import * as core from "@actions/core";
+import * as cacheUtils from "./utils/cacheUtils"
+
 
 import { Events, Inputs, State } from "./constants";
 import { IStateProvider } from "./stateProvider";
@@ -10,11 +11,11 @@ import * as utils from "./utils/actionUtils";
 // throw an uncaught exception.  Instead of failing this action, just warn.
 process.on("uncaughtException", e => utils.logWarning(e.message));
 
-async function saveImpl(stateProvider: IStateProvider): Promise<number | void> {
-    let cacheId = -1;
+async function saveImpl(stateProvider: IStateProvider): Promise<boolean> {
+    let saved = false;
     try {
         if (!utils.isCacheFeatureAvailable()) {
-            return;
+            return false;
         }
 
         if (!utils.isValidEvent()) {
@@ -23,7 +24,7 @@ async function saveImpl(stateProvider: IStateProvider): Promise<number | void> {
                     process.env[Events.Key]
                 } is not supported because it's not tied to a branch or tag ref.`
             );
-            return;
+            return false;
         }
 
         // If restore has stored a primary key in state, reuse that
@@ -34,7 +35,7 @@ async function saveImpl(stateProvider: IStateProvider): Promise<number | void> {
 
         if (!primaryKey) {
             utils.logWarning(`Key is not specified.`);
-            return;
+            return false;
         }
 
         // If matched restore key is same as primary key, then do not save cache
@@ -45,7 +46,7 @@ async function saveImpl(stateProvider: IStateProvider): Promise<number | void> {
             core.info(
                 `Cache hit occurred on the primary key ${primaryKey}, not saving cache.`
             );
-            return;
+            return false;
         }
 
         const cachePaths = utils.getInputAsArray(Inputs.Path, {
@@ -58,7 +59,7 @@ async function saveImpl(stateProvider: IStateProvider): Promise<number | void> {
             Inputs.EnableCrossOsArchive
         );
 
-        cacheId = await cache.saveCache(
+        saved = await cacheUtils.saveCache(
             cachePaths,
             primaryKey,
             { uploadChunkSize: utils.getInputAsInt(Inputs.UploadChunkSize) },
@@ -67,13 +68,13 @@ async function saveImpl(stateProvider: IStateProvider): Promise<number | void> {
             s3BucketName
         );
 
-        if (cacheId != -1) {
+        if (!saved) {
             core.info(`Cache saved with key: ${primaryKey}`);
         }
     } catch (error: unknown) {
         utils.logWarning((error as Error).message);
     }
-    return cacheId;
+    return saved;
 }
 
 export default saveImpl;
